@@ -1,0 +1,711 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>箱根家族旅行 チーム対抗クイズ！</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Babel for JSX -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    
+    <!-- Google Fonts: Zen Maru Gothic -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Zen+Maru+Gothic:wght@400;500;700;900&display=swap" rel="stylesheet">
+
+    <!-- Import Map for React and Firebase -->
+    <script type="importmap">
+    {
+        "imports": {
+            "react": "https://esm.sh/react@18.2.0",
+            "react-dom/client": "https://esm.sh/react-dom@18.2.0/client",
+            "firebase/app": "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js",
+            "firebase/auth": "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js",
+            "firebase/firestore": "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js"
+        }
+    }
+    </script>
+
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['"Zen Maru Gothic"', 'sans-serif'],
+                    },
+                    colors: {
+                        'wagara-bg': '#FDF9F1',
+                        'wagara-red': '#D9534F',
+                        'wagara-blue': '#4A90E2',
+                        'wagara-yellow': '#F5A623',
+                        'wagara-orange': '#F29C38',
+                        'wagara-green': '#6B8E23',
+                        'wagara-dark': '#4A3B32',
+                    }
+                }
+            }
+        }
+    </script>
+
+    <style>
+        body {
+            background-color: #FDF9F1;
+            background-image: radial-gradient(#F29C38 0.5px, transparent 0.5px), radial-gradient(#F29C38 0.5px, #FDF9F1 0.5px);
+            background-size: 20px 20px;
+            background-position: 0 0, 10px 10px;
+            background-attachment: fixed;
+            color: #4A3B32;
+            -webkit-tap-highlight-color: transparent;
+        }
+        
+        .pop-shadow { box-shadow: 0 4px 0 rgba(0, 0, 0, 0.15); }
+        .pop-shadow:active:not(:disabled) {
+            transform: translateY(4px);
+            box-shadow: 0 0px 0 rgba(0, 0, 0, 0.15);
+        }
+        
+        .bounce-in {
+            animation: bounceIn 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+        }
+
+        @keyframes bounceIn {
+            0% { transform: scale(0.8); opacity: 0; }
+            100% { transform: scale(1); opacity: 1; }
+        }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col items-center justify-start p-4">
+
+    <div id="root" class="w-full max-w-md mx-auto mt-4 pb-20"></div>
+
+    <script type="text/babel" data-type="module">
+        import React, { useState, useEffect } from 'react';
+        import { createRoot } from 'react-dom/client';
+        import { initializeApp } from 'firebase/app';
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from 'firebase/auth';
+        import { getFirestore, doc, setDoc, onSnapshot, collection, updateDoc } from 'firebase/firestore';
+
+        // --- クイズデータ ---
+        const quizData = [
+            { "question": "第1問：大涌谷名物「黒たまご」の寿命のヒミツ\nなぜ「7年」という数字になったのでしょうか？", "options": ["茹で上がる時間が「7時間」だから", "「七福神」など、縁起の良い数字として広まったから", "7種類の温泉成分が含まれているから", "発見されたのが「7月7日」だったから"], "answer": 1, "hint": "日本人が昔から特別におめでたい数として大切にしてきた言葉（〇〇神、春の〇〇草など）を思い浮かべてみてください！", "explanation": "大涌谷にある「延命地蔵尊」にあやかって寿命が延びるといわれ始め、縁起の良い「7」と結びついたそうです。" },
+            { "question": "第2問：日本一の急勾配を登る「箱根登山電車」\n箱根湯本駅から強羅駅までの間に、スイッチバックは何回あるでしょうか？", "options": ["1回", "3回", "5回", "7回"], "answer": 1, "hint": "乗車時間は約40分。多すぎると電車が進みませんし、1回だけだとあの急な山は登りきれません！", "explanation": "出山・大平台・上大平台の計3回です。スイッチバックのたびに運転士さんと車掌さんが入れ替わる姿も見どころです。" },
+            { "question": "第3問：『新世紀エヴァンゲリオン』のヤシマ作戦\n初号機が巨大なライフルを構えて狙撃を行った場所は、箱根のどこでしょうか？", "options": ["大涌谷", "金時山", "二子山", "大観山"], "answer": 2, "hint": "ターゲット（使徒）が浮かんでいたのは「芦ノ湖の上空」です。湖を目の前に見下ろせる位置にある山を選んでください！", "explanation": "芦ノ湖の東側に並ぶ「上二子山・下二子山」のうち、下二子山から芦ノ湖上空の使徒を狙撃しました。" },
+            { "question": "第4問：大涌谷の昔の呼び名\n江戸時代までは、ちょっと怖い別の名前で呼ばれていました。それはどれでしょう？", "options": ["鬼ヶ谷", "閻魔沢", "地獄谷", "雷神谷"], "answer": 2, "hint": "北海道の登別温泉など、日本全国の温泉地で「白い煙が噴き出し、硫黄の匂いが立ち込める場所」によくつけられる定番の呼び名です！", "explanation": "かつては「地獄谷」などと呼ばれていましたが、明治天皇のご訪問にあわせ「縁起が悪い」ということで「大涌谷」に改名されました。" },
+            { "question": "第5問：伝統工芸「箱根寄木細工」の色のヒミツ\n白・黒・黄色・緑などカラフルな模様は、どうやって色を出しているでしょうか？", "options": ["天然の草木染めで木を染めている", "温泉の成分に浸けて変色させている", "木そのものが持つ「自然の色」を組み合わせている", "漆を何層にも塗り重ねている"], "answer": 2, "hint": "表面をカンナで薄く削ってむいても、中からまったく同じカラフルな模様がずっと出てきます。「表面を塗っているわけではない」としたら…？", "explanation": "着色は一切なし！世界中のさまざまな木材が持つ「地色」をパズルのように組み合わせて作られています。" },
+            { "question": "第6問：【価格当て】一番高いお土産はどれ？\n1箱（1袋）あたりの販売価格が一番高いものはどれでしょう？", "options": ["大涌谷「黒たまご」（4個入り）", "富士屋ホテル「伝統のビーフカレー」（レトルト1食）", "菊川商店「箱根まんじゅう」（10個入り）", "グランリヴィエール箱根「箱根ラスク」（8枚入り）"], "answer": 1, "hint": "黒たまごはワンコイン（500円）。残る3つのうち「1皿4,500円もする老舗ホテルの看板メニュー」を自宅で味わえる商品があります！", "explanation": "富士屋ホテルのビーフカレーは約1,000円前後。まんじゅうは約800円、ラスクは約600円台、黒たまごは500円です。" },
+            { "question": "第7問：【売上・人気当て】定番お菓子の王者はどれ？\n「定番・ばらまきお菓子お土産」で、一番人気の定番商品としてよく1位に挙げられるのは？", "options": ["湯もち（ちもと）", "箱根ラスク（グランリヴィエール箱根）", "月のうさぎ（和菓子 菜の花）", "箱根のうり坊（しいの食品）"], "answer": 1, "hint": "「日持ちがする」「軽くて持ち帰りやすい」「和菓子が苦手な人や子どもでも食べやすい洋菓子」といえばどれでしょう？", "explanation": "軽くて日持ちし、個包装で配りやすいため現代の定番王者になっています。" },
+            { "question": "第8問：国民的唱歌『箱根八里』\n「箱根の山は 天下の険」のすぐ後に続く歌詞はどれでしょうか？", "options": ["函谷関も ものならず", "富士山よりも まだ高い", "芦ノ湖深く 底知れず", "湯本の湯気は 雲のごとし"], "answer": 0, "hint": "「タタタタ・タン・タタ・タタタタ・タン♪」のリズムに文字数がピタッとハマるのはどれでしょう？", "explanation": "「かんこくかん・も・もの・なら・ず」でリズムにピタリ！「中国の有名な難所・函谷関と比べても問題にならないほど険しい」という意味です。" },
+            { "question": "第9問：【感覚当て】箱根の温泉、1日の湧出量は？\n約2万5,000トンもの温泉は、一般的な家庭用のお風呂（約200リットル）換算で約何杯分？", "options": ["約1,250杯分", "約1万2,500杯分", "約12万5,000杯分", "約125万杯分"], "answer": 2, "hint": "水1トンは1,000リットル。つまり「2,500万リットル」を「200」で割ってみましょう！（ゼロを2つ消して、半分にするだけ！）", "explanation": "2,500万 ÷ 200 ＝ 12万5,000杯分！日本中の人が順番に入ってもお釣りがくる圧倒的な湯量です。" },
+            { "question": "第10問：【格付け当て】彫刻の森美術館の「ピカソ館」\nこの美術館が所蔵しているピカソの作品は、全部で何点あるでしょうか？", "options": ["19点", "89点", "189点", "319点"], "answer": 3, "hint": "ピカソ専用の独立した建物を1つ丸ごと建てるくらいの、圧倒的なコレクション数です！", "explanation": "なんと319点！娘のマヤ・ピカソさんから譲り受けた陶芸作品188点を中心に、世界有数のコレクションを誇ります。" }
+        ];
+
+        const TIME_LIMIT = 300; // 制限時間（秒） - 5分に変更
+        const LOCAL_GAME_KEY = 'hakoneQuizGameState';
+        const LOCAL_PLAYERS_KEY = 'hakoneQuizPlayers';
+        const loadLocalJson = (key, fallback) => {
+            try {
+                const value = localStorage.getItem(key);
+                return value ? JSON.parse(value) : fallback;
+            } catch (e) {
+                return fallback;
+            }
+        };
+
+        function App() {
+            const [user, setUser] = useState(null);
+            const [gameState, setGameState] = useState(null);
+            const [players, setPlayers] = useState([]);
+            const [isJoined, setIsJoined] = useState(false);
+            const [myPlayerInfo, setMyPlayerInfo] = useState(null);
+            
+            const [joinName, setJoinName] = useState('');
+            const [joinTeam, setJoinTeam] = useState('red');
+            const [timeLeft, setTimeLeft] = useState(TIME_LIMIT);
+
+            // Firebaseの初期化と認証
+            useEffect(() => {
+                try {
+                    const firebaseConfigStr = typeof __firebase_config !== 'undefined' ? __firebase_config : '{}';
+                    const firebaseConfig = JSON.parse(firebaseConfigStr);
+                    if (Object.keys(firebaseConfig).length === 0) {
+                        console.warn("Firebase config is missing");
+                        const localUid = `local-${localStorage.getItem('hakoneQuizLocalUid') || (() => {
+                            const uid = Math.random().toString(36).slice(2);
+                            localStorage.setItem('hakoneQuizLocalUid', uid);
+                            return uid;
+                        })()}`;
+                        setUser({ uid: localUid, isLocal: true });
+                        setGameState(loadLocalJson(LOCAL_GAME_KEY, {
+                            status: 'lobby',
+                            currentQuestionIndex: 0,
+                            gameId: 'init'
+                        }));
+                        setPlayers(loadLocalJson(LOCAL_PLAYERS_KEY, []));
+                        return;
+                    }
+                    const app = initializeApp(firebaseConfig);
+                    const auth = getAuth(app);
+                    
+                    const initAuth = async () => {
+                        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                            await signInWithCustomToken(auth, __initial_auth_token);
+                        } else {
+                            await signInAnonymously(auth);
+                        }
+                    };
+                    initAuth().catch(console.error);
+
+                    const unsubscribe = onAuthStateChanged(auth, setUser);
+                    return () => unsubscribe();
+                } catch (e) {
+                    console.error("Firebase init error", e);
+                }
+            }, []);
+
+            // データの購読
+            useEffect(() => {
+                if (!user) return;
+
+                if (user.isLocal) {
+                    const syncLocalData = () => {
+                        setGameState(loadLocalJson(LOCAL_GAME_KEY, {
+                            status: 'lobby',
+                            currentQuestionIndex: 0,
+                            gameId: 'init'
+                        }));
+                        const localPlayers = loadLocalJson(LOCAL_PLAYERS_KEY, []);
+                        setPlayers(localPlayers);
+                        const mine = localPlayers.find(p => p.id === user.uid);
+                        if (mine) {
+                            setMyPlayerInfo(mine);
+                            setIsJoined(true);
+                        }
+                    };
+
+                    syncLocalData();
+                    window.addEventListener('storage', syncLocalData);
+                    return () => window.removeEventListener('storage', syncLocalData);
+                }
+                
+                const db = getFirestore();
+                const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+                
+                // ゲーム状態の同期
+                const stateRef = doc(db, 'artifacts', appId, 'public', 'data', 'gameState', 'main');
+                const unsubState = onSnapshot(stateRef, (docSnap) => {
+                    if (docSnap.exists()) {
+                        setGameState(docSnap.data());
+                    } else {
+                        setGameState({ status: 'lobby', currentQuestionIndex: 0, gameId: 'init' });
+                    }
+                }, (err) => console.error(err));
+
+                // プレイヤー一覧の同期
+                const playersRef = collection(db, 'artifacts', appId, 'public', 'data', 'players');
+                const unsubPlayers = onSnapshot(playersRef, (snapshot) => {
+                    const pList = [];
+                    snapshot.forEach(docSnap => {
+                        const data = docSnap.data();
+                        pList.push({ id: docSnap.id, ...data });
+                        if (docSnap.id === user.uid) {
+                            setMyPlayerInfo(data);
+                            setIsJoined(true);
+                            if (data.name) setJoinName(data.name);
+                            if (data.team) setJoinTeam(data.team);
+                        }
+                    });
+                    setPlayers(pList);
+                }, (err) => console.error(err));
+
+                return () => {
+                    unsubState();
+                    unsubPlayers();
+                };
+            }, [user]);
+
+            // タイマー処理（クライアント側で計算）
+            useEffect(() => {
+                if (!gameState || gameState.status !== 'quiz' || gameState.showAnswer) return;
+                
+                const interval = setInterval(() => {
+                    const elapsed = (Date.now() - (gameState.questionStartTime || Date.now())) / 1000;
+                    const remaining = Math.max(0, TIME_LIMIT - elapsed);
+                    setTimeLeft(remaining);
+                    
+                    if (remaining <= 0) {
+                        clearInterval(interval);
+                    }
+                }, 100);
+                
+                return () => clearInterval(interval);
+            }, [gameState?.questionStartTime, gameState?.status, gameState?.showAnswer]);
+
+            const updateLocalGame = (updates) => {
+                const nextGame = { ...loadLocalJson(LOCAL_GAME_KEY, {}), ...updates };
+                localStorage.setItem(LOCAL_GAME_KEY, JSON.stringify(nextGame));
+                setGameState(nextGame);
+            };
+
+            const updateLocalPlayers = (updater) => {
+                const nextPlayers = updater(loadLocalJson(LOCAL_PLAYERS_KEY, []));
+                localStorage.setItem(LOCAL_PLAYERS_KEY, JSON.stringify(nextPlayers));
+                setPlayers(nextPlayers);
+                const mine = nextPlayers.find(p => p.id === user.uid);
+                if (mine) setMyPlayerInfo(mine);
+            };
+
+            // アクション: ゲームに参加
+            const handleJoin = async () => {
+                if (!joinName.trim() || !user) return;
+                if (user.isLocal) {
+                    updateLocalPlayers(current => {
+                        const others = current.filter(p => p.id !== user.uid);
+                        const joined = {
+                            id: user.uid,
+                            name: joinName,
+                            team: joinTeam,
+                            score: 0,
+                            joinedAt: Date.now()
+                        };
+                        return [...others, joined];
+                    });
+                    setIsJoined(true);
+                    return;
+                }
+                const db = getFirestore();
+                const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+                const playerRef = doc(db, 'artifacts', appId, 'public', 'data', 'players', user.uid);
+                await setDoc(playerRef, {
+                    name: joinName,
+                    team: joinTeam,
+                    score: 0,
+                    joinedAt: Date.now()
+                }, { merge: true });
+            };
+
+            // アクション: 回答する
+            const handleAnswer = async (index) => {
+                if (!user || gameState.showAnswer || timeLeft <= 0) return;
+                const currentQIdx = gameState.currentQuestionIndex;
+                const answerKey = `answered_${gameState.gameId}_${currentQIdx}`;
+
+                if (user.isLocal) {
+                    updateLocalPlayers(current => current.map(p =>
+                        p.id === user.uid ? { ...p, [answerKey]: index } : p
+                    ));
+                    return;
+                }
+
+                const db = getFirestore();
+                const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+                const playerRef = doc(db, 'artifacts', appId, 'public', 'data', 'players', user.uid);
+                
+                // 解答を記録するだけ（何度でも変更可能・点数計算は正解発表時）
+                await updateDoc(playerRef, {
+                    [answerKey]: index
+                });
+            };
+
+            // --- 進行役アクション ---
+            const startGame = async () => {
+                if (user.isLocal) {
+                    updateLocalPlayers(current => current.map(p => ({ ...p, score: 0 })));
+                    updateLocalGame({
+                        status: 'quiz',
+                        gameId: Date.now().toString(),
+                        currentQuestionIndex: 0,
+                        questionStartTime: Date.now(),
+                        showAnswer: false,
+                        showHint: false
+                    });
+                    return;
+                }
+                const db = getFirestore();
+                const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+                const newGameId = Date.now().toString();
+                
+                // 全員のスコアをリセット
+                for (const p of players) {
+                    const pRef = doc(db, 'artifacts', appId, 'public', 'data', 'players', p.id);
+                    await updateDoc(pRef, { score: 0 });
+                }
+
+                const stateRef = doc(db, 'artifacts', appId, 'public', 'data', 'gameState', 'main');
+                await setDoc(stateRef, {
+                    status: 'quiz',
+                    gameId: newGameId,
+                    currentQuestionIndex: 0,
+                    questionStartTime: Date.now(),
+                    showAnswer: false,
+                    showHint: false
+                });
+            };
+
+            const showHintAll = async () => {
+                if (user.isLocal) {
+                    updateLocalGame({ showHint: true });
+                    return;
+                }
+                const db = getFirestore();
+                const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+                const stateRef = doc(db, 'artifacts', appId, 'public', 'data', 'gameState', 'main');
+                await updateDoc(stateRef, { showHint: true });
+            };
+
+            const showAnswerAll = async () => {
+                if (!gameState || gameState.showAnswer) return;
+
+                if (user.isLocal) {
+                    const currentQIdx = gameState.currentQuestionIndex;
+                    const answerKey = `answered_${gameState.gameId}_${currentQIdx}`;
+                    const correctIdx = quizData[currentQIdx].answer;
+                    updateLocalPlayers(current => current.map(p =>
+                        p[answerKey] === correctIdx
+                            ? { ...p, score: (p.score || 0) + 10 }
+                            : p
+                    ));
+                    updateLocalGame({ showAnswer: true });
+                    return;
+                }
+                
+                const db = getFirestore();
+                const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+                const currentQIdx = gameState.currentQuestionIndex;
+                const answerKey = `answered_${gameState.gameId}_${currentQIdx}`;
+                const correctIdx = quizData[currentQIdx].answer;
+
+                // 司会者がボタンを押したタイミングで、全員の解答を判定して10点加算
+                for (const p of players) {
+                    if (p[answerKey] === correctIdx) {
+                        const pRef = doc(db, 'artifacts', appId, 'public', 'data', 'players', p.id);
+                        await updateDoc(pRef, { score: (p.score || 0) + 10 });
+                    }
+                }
+
+                const stateRef = doc(db, 'artifacts', appId, 'public', 'data', 'gameState', 'main');
+                await updateDoc(stateRef, { showAnswer: true });
+            };
+
+            const nextQuestion = async () => {
+                if (user.isLocal) {
+                    if (gameState.currentQuestionIndex >= quizData.length - 1) {
+                        updateLocalGame({ status: 'result' });
+                    } else {
+                        updateLocalGame({
+                            currentQuestionIndex: gameState.currentQuestionIndex + 1,
+                            questionStartTime: Date.now(),
+                            showAnswer: false,
+                            showHint: false
+                        });
+                    }
+                    return;
+                }
+                const db = getFirestore();
+                const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+                const stateRef = doc(db, 'artifacts', appId, 'public', 'data', 'gameState', 'main');
+                
+                if (gameState.currentQuestionIndex >= quizData.length - 1) {
+                    await updateDoc(stateRef, { status: 'result' });
+                } else {
+                    await updateDoc(stateRef, {
+                        currentQuestionIndex: gameState.currentQuestionIndex + 1,
+                        questionStartTime: Date.now(),
+                        showAnswer: false,
+                        showHint: false
+                    });
+                }
+            };
+
+            const resetToLobby = async () => {
+                if (user.isLocal) {
+                    updateLocalGame({ status: 'lobby' });
+                    return;
+                }
+                const db = getFirestore();
+                const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+                const stateRef = doc(db, 'artifacts', appId, 'public', 'data', 'gameState', 'main');
+                await updateDoc(stateRef, { status: 'lobby' });
+            };
+
+            // チームスコア計算
+            const teamScores = {
+                red: players.filter(p => p.team === 'red').reduce((acc, p) => acc + (p.score || 0), 0),
+                blue: players.filter(p => p.team === 'blue').reduce((acc, p) => acc + (p.score || 0), 0),
+                yellow: players.filter(p => p.team === 'yellow').reduce((acc, p) => acc + (p.score || 0), 0),
+                green: players.filter(p => p.team === 'green').reduce((acc, p) => acc + (p.score || 0), 0),
+            };
+
+            // --- 描画コンポーネント ---
+            if (!user || !gameState) {
+                return <div className="text-xl font-bold mt-20">📡 接続中...</div>;
+            }
+
+            return (
+                <div className="w-full pb-24">
+                    {/* --- ロビー画面 --- */}
+                    {gameState.status === 'lobby' && (
+                        <div className="bg-white/95 backdrop-blur-sm p-6 rounded-3xl shadow-xl border-4 border-wagara-orange bounce-in">
+                            <h1 className="text-3xl font-black text-wagara-red mb-6 text-center">箱根クイズ 参加受付</h1>
+                            
+                            {!isJoined ? (
+                                <div className="space-y-4">
+                                    <div>
+                                        <label className="block text-sm font-bold text-wagara-dark mb-1">お名前</label>
+                                        <input 
+                                            type="text" 
+                                            value={joinName} 
+                                            onChange={e => setJoinName(e.target.value)} 
+                                            className="w-full p-3 border-2 border-gray-300 rounded-xl focus:border-wagara-orange outline-none font-bold"
+                                            placeholder="例: お父さん"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-bold text-wagara-dark mb-2">チーム選択</label>
+                                        <div className="grid grid-cols-2 gap-2">
+                                            <button onClick={() => setJoinTeam('red')} className={`p-3 rounded-xl font-bold border-2 transition-all ${joinTeam === 'red' ? 'bg-red-100 border-wagara-red text-wagara-red' : 'bg-gray-50 border-gray-200'}`}>🔴 白澤チーム</button>
+                                            <button onClick={() => setJoinTeam('blue')} className={`p-3 rounded-xl font-bold border-2 transition-all ${joinTeam === 'blue' ? 'bg-blue-100 border-wagara-blue text-wagara-blue' : 'bg-gray-50 border-gray-200'}`}>🔵 相馬チーム</button>
+                                            <button onClick={() => setJoinTeam('yellow')} className={`p-3 rounded-xl font-bold border-2 transition-all ${joinTeam === 'yellow' ? 'bg-yellow-100 border-wagara-yellow text-wagara-yellow' : 'bg-gray-50 border-gray-200'}`}>🟡 つーくん</button>
+                                            <button onClick={() => setJoinTeam('green')} className={`p-3 rounded-xl font-bold border-2 transition-all ${joinTeam === 'green' ? 'bg-green-100 border-wagara-green text-wagara-green' : 'bg-gray-50 border-gray-200'}`}>🟢 郡山チーム</button>
+                                        </div>
+                                    </div>
+                                    <button 
+                                        onClick={handleJoin}
+                                        className="w-full bg-wagara-orange text-white text-xl font-bold py-4 rounded-xl pop-shadow mt-4"
+                                    >参加する！</button>
+                                </div>
+                            ) : (
+                                <div className="text-center">
+                                    <p className="font-bold text-lg text-wagara-green mb-4">✨ 参加完了しました！ ✨</p>
+                                    <p className="text-sm text-gray-600 mb-6">進行役がゲームを開始するのをお待ちください...</p>
+                                </div>
+                            )}
+
+                            {/* 参加者一覧 */}
+                            <div className="mt-8 border-t-2 border-gray-100 pt-4">
+                                <h3 className="font-bold text-sm text-center mb-4">現在の参加者 ({players.length}人)</h3>
+                                <div className="grid grid-cols-2 gap-2">
+                                    <div className="bg-red-50 p-2 rounded-xl border border-red-100 min-h-[80px]">
+                                        <div className="text-wagara-red font-bold text-xs mb-1 border-b border-red-200 pb-1">🔴 白澤チーム</div>
+                                        {players.filter(p => p.team === 'red').map(p => <div key={p.id} className="text-xs font-bold my-1 truncate">{p.name} {p.id === user.uid && "(*)"}</div>)}
+                                    </div>
+                                    <div className="bg-blue-50 p-2 rounded-xl border border-blue-100 min-h-[80px]">
+                                        <div className="text-wagara-blue font-bold text-xs mb-1 border-b border-blue-200 pb-1">🔵 相馬チーム</div>
+                                        {players.filter(p => p.team === 'blue').map(p => <div key={p.id} className="text-xs font-bold my-1 truncate">{p.name} {p.id === user.uid && "(*)"}</div>)}
+                                    </div>
+                                    <div className="bg-yellow-50 p-2 rounded-xl border border-yellow-100 min-h-[80px]">
+                                        <div className="text-wagara-yellow font-bold text-xs mb-1 border-b border-yellow-200 pb-1">🟡 つーくん</div>
+                                        {players.filter(p => p.team === 'yellow').map(p => <div key={p.id} className="text-xs font-bold my-1 truncate">{p.name} {p.id === user.uid && "(*)"}</div>)}
+                                    </div>
+                                    <div className="bg-green-50 p-2 rounded-xl border border-green-100 min-h-[80px]">
+                                        <div className="text-wagara-green font-bold text-xs mb-1 border-b border-green-200 pb-1">🟢 郡山チーム</div>
+                                        {players.filter(p => p.team === 'green').map(p => <div key={p.id} className="text-xs font-bold my-1 truncate">{p.name} {p.id === user.uid && "(*)"}</div>)}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* --- クイズ画面 --- */}
+                    {gameState.status === 'quiz' && (
+                        <div className="space-y-4">
+                            <div className="bg-white/95 backdrop-blur-sm p-5 rounded-3xl shadow-lg border-4 border-wagara-orange bounce-in">
+                                <div className="flex justify-between items-center mb-3">
+                                    <span className="bg-wagara-orange text-white text-xs font-bold px-3 py-1 rounded-full">第 {gameState.currentQuestionIndex + 1} 問</span>
+                                    <span className="text-xs font-bold text-gray-500">あなたの得点: {myPlayerInfo?.score || 0}pt</span>
+                                </div>
+                                
+                                {/* タイマーゲージ */}
+                                {!gameState.showAnswer && (
+                                    <div className="mb-4">
+                                        <div className="w-full bg-gray-200 rounded-full h-3 mb-1 overflow-hidden">
+                                            <div 
+                                                className={`h-3 transition-all duration-100 ease-linear ${timeLeft > 30 ? 'bg-wagara-green' : 'bg-wagara-red'}`} 
+                                                style={{ width: `${(Math.max(0, timeLeft) / TIME_LIMIT) * 100}%` }}
+                                            ></div>
+                                        </div>
+                                        <div className="text-right text-xs font-bold text-gray-500">残り {Math.ceil(timeLeft)}秒</div>
+                                    </div>
+                                )}
+
+                                <h2 className="text-lg md:text-xl font-bold text-wagara-dark leading-relaxed whitespace-pre-wrap">
+                                    {quizData[gameState.currentQuestionIndex].question}
+                                </h2>
+                                
+                                {/* 司会者がヒントを出したら表示 */}
+                                {gameState.showHint && !gameState.showAnswer && (
+                                    <div className="mt-4 bg-yellow-50 border-2 border-wagara-yellow p-3 rounded-xl bounce-in">
+                                        <p className="font-bold text-wagara-yellow text-xs mb-1">💡 ヒント</p>
+                                        <p className="text-wagara-dark text-sm leading-relaxed">{quizData[gameState.currentQuestionIndex].hint}</p>
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* 選択肢ボタン */}
+                            <div className="grid grid-cols-1 gap-3">
+                                {quizData[gameState.currentQuestionIndex].options.map((option, index) => {
+                                    const answerKey = `answered_${gameState.gameId}_${gameState.currentQuestionIndex}`;
+                                    const myAnswer = myPlayerInfo?.[answerKey];
+                                    const isTimeUp = timeLeft <= 0 && !gameState.showAnswer;
+                                    
+                                    let buttonClass = "w-full text-left p-4 rounded-2xl text-lg font-bold transition-all border-2 ";
+                                    
+                                    if (gameState.showAnswer) {
+                                        // 正解発表時
+                                        if (index === quizData[gameState.currentQuestionIndex].answer) {
+                                            buttonClass += "bg-green-100 border-wagara-green text-green-800 shadow-none";
+                                        } else if (index === myAnswer) {
+                                            buttonClass += "bg-red-50 border-wagara-red text-red-800 shadow-none";
+                                        } else {
+                                            buttonClass += "bg-white border-gray-200 text-gray-400 opacity-50 shadow-none";
+                                        }
+                                    } else {
+                                        // 回答受付中 (何度でも変更可能)
+                                        if (index === myAnswer) {
+                                            // 自分が現在選択しているボタン
+                                            buttonClass += "bg-orange-100 border-wagara-orange text-wagara-orange shadow-none transform translate-y-1";
+                                        } else if (isTimeUp) {
+                                            buttonClass += "bg-white border-gray-200 text-gray-400 shadow-none opacity-50";
+                                        } else {
+                                            // まだ選んでいない/選択から外れたボタン
+                                            buttonClass += "bg-white border-gray-200 text-wagara-dark pop-shadow active:bg-orange-50";
+                                        }
+                                    }
+
+                                    return (
+                                        <button 
+                                            key={index}
+                                            onClick={() => handleAnswer(index)}
+                                            disabled={gameState.showAnswer || isTimeUp}
+                                            className={buttonClass}
+                                        >
+                                            <div className="flex items-center">
+                                                <span className="inline-block w-8 h-8 flex-shrink-0 text-center leading-8 bg-black/5 rounded-full mr-3 text-sm">
+                                                    {index + 1}
+                                                </span>
+                                                {option}
+                                                
+                                                {/* 結果発表時のアイコン */}
+                                                {gameState.showAnswer && index === quizData[gameState.currentQuestionIndex].answer && <span className="ml-auto text-2xl">⭕️</span>}
+                                                {gameState.showAnswer && index === myAnswer && index !== quizData[gameState.currentQuestionIndex].answer && <span className="ml-auto text-2xl">❌</span>}
+                                            </div>
+                                        </button>
+                                    );
+                                })}
+                            </div>
+
+                            {/* 正解発表時の解説 */}
+                            {gameState.showAnswer && (
+                                <div className="bg-white/95 p-5 rounded-3xl shadow-lg border-2 border-wagara-orange bounce-in mt-4">
+                                    <p className="font-bold text-wagara-red text-sm mb-2">【正解】 {quizData[gameState.currentQuestionIndex].options[quizData[gameState.currentQuestionIndex].answer]}</p>
+                                    <p className="text-wagara-dark text-sm leading-relaxed bg-orange-50 p-3 rounded-xl">
+                                        {quizData[gameState.currentQuestionIndex].explanation}
+                                    </p>
+                                </div>
+                            )}
+                        </div>
+                    )}
+
+                    {/* --- 結果発表画面 --- */}
+                    {gameState.status === 'result' && (() => {
+                        const maxScore = Math.max(teamScores.red, teamScores.blue, teamScores.yellow, teamScores.green);
+                        const teamNames = { red: '白澤チーム', blue: '相馬チーム', yellow: 'つーくん', green: '郡山チーム' };
+                        const winners = Object.keys(teamScores).filter(team => teamScores[team] === maxScore && maxScore > 0);
+                        const winnerText = winners.length > 0 ? winners.map(w => teamNames[w]).join(' と ') : '引き分け';
+
+                        return (
+                            <div className="bg-white/95 backdrop-blur-sm p-8 rounded-3xl shadow-xl text-center border-4 border-wagara-orange bounce-in">
+                                <h2 className="text-3xl font-black text-wagara-dark mb-6">🏆 最終結果 🏆</h2>
+                                
+                                <div className="grid grid-cols-2 gap-4 mb-8">
+                                    <div className="flex flex-col items-center">
+                                        <div className="bg-wagara-red text-white font-bold py-1 px-4 rounded-t-xl w-full">白澤チーム</div>
+                                        <div className="bg-red-50 border-2 border-wagara-red text-wagara-red font-black text-2xl py-2 rounded-b-xl w-full">{teamScores.red}</div>
+                                    </div>
+                                    <div className="flex flex-col items-center">
+                                        <div className="bg-wagara-blue text-white font-bold py-1 px-4 rounded-t-xl w-full">相馬チーム</div>
+                                        <div className="bg-blue-50 border-2 border-wagara-blue text-wagara-blue font-black text-2xl py-2 rounded-b-xl w-full">{teamScores.blue}</div>
+                                    </div>
+                                    <div className="flex flex-col items-center">
+                                        <div className="bg-wagara-yellow text-white font-bold py-1 px-4 rounded-t-xl w-full">つーくん</div>
+                                        <div className="bg-yellow-50 border-2 border-wagara-yellow text-wagara-yellow font-black text-2xl py-2 rounded-b-xl w-full">{teamScores.yellow}</div>
+                                    </div>
+                                    <div className="flex flex-col items-center">
+                                        <div className="bg-wagara-green text-white font-bold py-1 px-4 rounded-t-xl w-full">郡山チーム</div>
+                                        <div className="bg-green-50 border-2 border-wagara-green text-wagara-green font-black text-2xl py-2 rounded-b-xl w-full">{teamScores.green}</div>
+                                    </div>
+                                </div>
+
+                                <p className="text-xl font-bold text-wagara-orange mb-8">
+                                    優勝は... {winnerText} です！！🎉
+                                </p>
+                                
+                                {/* 個人成績 */}
+                                <div className="bg-orange-50 p-4 rounded-xl text-left mb-6 border border-orange-200">
+                                    <h3 className="font-bold text-sm text-center mb-2">あなたの成績</h3>
+                                    <div className="text-center text-2xl font-black text-wagara-dark">{myPlayerInfo?.score || 0} <span className="text-sm font-normal">pt</span></div>
+                                </div>
+                            </div>
+                        );
+                    })()}
+
+                    {/* --- スコアボード (画面下部に配置) --- */}
+                    {gameState.status !== 'lobby' && (
+                        <div className="fixed bottom-14 left-0 w-full z-40 px-4 pointer-events-none flex justify-center pb-safe">
+                            <div className="w-full max-w-md flex justify-around items-center bg-white/95 backdrop-blur-md p-3 rounded-2xl shadow-[0_-4px_10px_rgba(0,0,0,0.15)] border-2 border-wagara-orange pointer-events-auto">
+                                <div className="flex flex-col items-center">
+                                    <span className="text-[10px] font-bold text-wagara-red">白澤チーム</span>
+                                    <span className="text-lg font-black text-wagara-red">{teamScores.red}<span className="text-xs font-normal">pt</span></span>
+                                </div>
+                                <div className="flex flex-col items-center">
+                                    <span className="text-[10px] font-bold text-wagara-blue">相馬チーム</span>
+                                    <span className="text-lg font-black text-wagara-blue">{teamScores.blue}<span className="text-xs font-normal">pt</span></span>
+                                </div>
+                                <div className="flex flex-col items-center">
+                                    <span className="text-[10px] font-bold text-wagara-yellow">つーくん</span>
+                                    <span className="text-lg font-black text-wagara-yellow">{teamScores.yellow}<span className="text-xs font-normal">pt</span></span>
+                                </div>
+                                <div className="flex flex-col items-center">
+                                    <span className="text-[10px] font-bold text-wagara-green">郡山チーム</span>
+                                    <span className="text-lg font-black text-wagara-green">{teamScores.green}<span className="text-xs font-normal">pt</span></span>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* --- 進行役用コントロールパネル（全員の画面下部に小さく表示） --- */}
+                    {isJoined && (
+                        <div className="fixed bottom-0 left-0 w-full bg-gray-900/90 text-white p-3 flex justify-between items-center z-50 backdrop-blur-md pb-safe">
+                            <span className="text-xs font-bold text-gray-300">🎮 進行操作(誰でも可)</span>
+                            <div className="flex gap-2">
+                                {gameState.status === 'lobby' && <button onClick={startGame} className="bg-wagara-orange hover:bg-orange-500 px-4 py-2 rounded-lg font-bold text-sm shadow-md transition-colors">ゲーム開始</button>}
+                                
+                                {gameState.status === 'quiz' && !gameState.showAnswer && !gameState.showHint && (
+                                    <button onClick={showHintAll} className="bg-wagara-yellow hover:bg-yellow-500 text-wagara-dark px-4 py-2 rounded-lg font-bold text-sm shadow-md transition-colors">ヒント出す</button>
+                                )}
+                                
+                                {gameState.status === 'quiz' && !gameState.showAnswer && (
+                                    <button onClick={showAnswerAll} className="bg-wagara-green hover:bg-green-600 px-4 py-2 rounded-lg font-bold text-sm shadow-md transition-colors">正解発表</button>
+                                )}
+                                
+                                {gameState.status === 'quiz' && gameState.showAnswer && (
+                                    <button onClick={nextQuestion} className="bg-wagara-orange hover:bg-orange-500 px-4 py-2 rounded-lg font-bold text-sm shadow-md transition-colors">
+                                        {gameState.currentQuestionIndex < quizData.length - 1 ? '次の問題へ' : '結果を見る'}
+                                    </button>
+                                )}
+                                
+                                {gameState.status === 'result' && <button onClick={resetToLobby} className="bg-gray-600 hover:bg-gray-500 px-4 py-2 rounded-lg font-bold text-sm shadow-md transition-colors">ロビーに戻る</button>}
+                            </div>
+                        </div>
+                    )}
+                </div>
+            );
+        }
+
+        const root = createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
